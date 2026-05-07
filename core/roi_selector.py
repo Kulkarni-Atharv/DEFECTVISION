@@ -2,91 +2,99 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-
-# Maximum display width (pixels) — large frames are scaled down for the selector
-_MAX_DISPLAY_W = 900
+_MAX_DISPLAY_W = 900   # scale down large sensors for the selector window
+_FRAME_MS      = 33    # ~30 fps live update interval
 
 
 class ROISelector:
     """
-    ROI selection via Tkinter, which talks to X11 directly and bypasses
-    Qt (the source of the NULL-window-handler crash on Pi OS Bookworm).
+    Live-feed ROI selector via Tkinter.
 
-    Drag a rectangle over the print region, then press ENTER or SPACE.
-    Press Q or Escape to cancel.
+    The camera keeps streaming so you can physically position it while
+    drawing the rectangle.  Tkinter talks to X11 directly and bypasses
+    the Qt layer that crashes on Pi OS Bookworm.
 
-    Requires: sudo apt install -y python3-tk
-    Pillow (ImageTk) is used for image display — already a scikit-image dep.
+    Controls:
+        Drag left mouse   — draw selection rectangle
+        ENTER / SPACE     — confirm
+        R                 — clear and redraw
+        Q / Escape        — cancel
+
+    Requires:
+        sudo apt install -y python3-tk python3-pil.imagetk
     """
 
     def select(self, cam) -> tuple[int, int, int, int] | None:
-        # Flush stale frames from the camera buffer
-        for _ in range(5):
-            cam.read()
-
-        ret, frame = cam.read()
-        if not ret:
-            print("[ERROR] Could not read frame for ROI selection.")
-            return None
-
-        return self._select_tk(frame)
-
-    # ------------------------------------------------------------------
-
-    def _select_tk(self, frame_bgr: np.ndarray) -> tuple[int, int, int, int] | None:
         try:
             import tkinter as tk
         except ImportError:
-            print("[ERROR] python3-tk not found.")
-            print("        sudo apt install -y python3-tk")
-            print("        Then rerun, or use:  python main.py --roi X Y W H")
+            self._hint("python3-tk not found", "sudo apt install -y python3-tk")
             return None
-
         try:
             from PIL import Image, ImageTk
         except ImportError:
-            print("[ERROR] Pillow ImageTk not available.")
-            print("        sudo apt install -y python3-pil.imagetk")
-            print("        Then rerun, or use:  python main.py --roi X Y W H")
+            self._hint("Pillow ImageTk not found",
+                       "sudo apt install -y python3-pil.imagetk")
             return None
 
-        orig_h, orig_w = frame_bgr.shape[:2]
+        # ---- measure frame size from first grab ---------------------
+        for _ in range(3):
+            cam.read()
+        ret, frame0 = cam.read()
+        if not ret:
+            print("[ERROR] Cannot read camera frame.")
+            return None
+
+        orig_h, orig_w = frame0.shape[:2]
         scale  = min(1.0, _MAX_DISPLAY_W / orig_w)
         disp_w = int(orig_w * scale)
         disp_h = int(orig_h * scale)
 
-        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-        if scale < 1.0:
-            frame_rgb = cv2.resize(frame_rgb, (disp_w, disp_h))
-
-        # ---- Tkinter state ------------------------------------------
-        roi_out  = [None]   # written by on_release
+        # ---- shared mutable state -----------------------------------
+        roi_out  = [None]
         start_xy = [None]
         rect_id  = [None]
+        live     = [True]   # False once the user confirms/cancels
 
-        # ---- Build window -------------------------------------------
+        # ---- build window -------------------------------------------
         root = tk.Tk()
-        root.title("Select ROI  |  Drag → ENTER/SPACE confirm  |  Q/Esc cancel")
+        root.title("Live ROI selection  |  Drag → ENTER confirm  |  R reset  |  Q cancel")
         root.resizable(False, False)
 
-        canvas = tk.Canvas(root, width=disp_w, height=disp_h, cursor="crosshair",
-                           highlightthickness=0)
+        canvas = tk.Canvas(root, width=disp_w, height=disp_h,
+                           cursor="crosshair", highlightthickness=0, bg="black")
         canvas.pack()
 
-        photo = ImageTk.PhotoImage(Image.fromarray(frame_rgb))
-        canvas.create_image(0, 0, anchor=tk.NW, image=photo)
-
         status = tk.Label(root,
-                          text="Drag with mouse to select the print region",
-                          fg="#00cc44", bg="#1e1e1e",
-                          font=("Helvetica", 11), pady=4)
+                          text="Position camera, then drag to select the print region",
+                          fg="#00cc44", bg="#1e1e1e", font=("Helvetica", 11), pady=4)
         status.pack(fill=tk.X)
 
-        # ---- Mouse callbacks ----------------------------------------
+        img_item  = canvas.create_image(0, 0, anchor=tk.NW)
+        photo_ref = [None]   # must hold a Python reference or GC collects it
+
+        # ---- live frame update loop ---------------------------------
+        def update_frame():
+            if not live[0]:
+                return
+            ret, frame = cam.read()
+            if ret:
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                if scale < 1.0:
+                    rgb = cv2.resize(rgb, (disp_w, disp_h))
+                photo_ref[0] = ImageTk.PhotoImage(Image.fromarray(rgb))
+                canvas.itemconfig(img_item, image=photo_ref[0])
+                # Keep the selection rectangle on top of the new frame
+                if rect_id[0]:
+                    canvas.tag_raise(rect_id[0])
+            root.after(_FRAME_MS, update_frame)
+
+        # ---- mouse callbacks ----------------------------------------
         def on_press(e):
             start_xy[0] = (e.x, e.y)
             if rect_id[0]:
                 canvas.delete(rect_id[0])
+                rect_id[0] = None
 
         def on_drag(e):
             if not start_xy[0]:
@@ -106,7 +114,6 @@ class ROISelector:
             x2 = max(start_xy[0][0], e.x)
             y2 = max(start_xy[0][1], e.y)
             if (x2 - x1) >= 16 and (y2 - y1) >= 16:
-                # Scale coordinates back to original image space
                 roi_out[0] = (
                     int(x1 / scale),
                     int(y1 / scale),
@@ -114,29 +121,43 @@ class ROISelector:
                     int((y2 - y1) / scale),
                 )
                 status.config(
-                    text=f"ROI {roi_out[0][2]}×{roi_out[0][3]} px  — press ENTER to confirm"
+                    text=f"ROI {roi_out[0][2]}×{roi_out[0][3]} px  — ENTER to confirm | R to redraw"
                 )
 
         def confirm(e=None):
             if roi_out[0]:
+                live[0] = False
                 root.quit()
 
+        def reset(e=None):
+            roi_out[0] = None
+            start_xy[0] = None
+            if rect_id[0]:
+                canvas.delete(rect_id[0])
+                rect_id[0] = None
+            status.config(text="Position camera, then drag to select the print region")
+
         def cancel(e=None):
+            live[0] = False
             roi_out[0] = None
             root.quit()
 
-        canvas.bind("<ButtonPress-1>",  on_press)
-        canvas.bind("<B1-Motion>",       on_drag)
-        canvas.bind("<ButtonRelease-1>", on_release)
-        root.bind("<Return>",            confirm)
-        root.bind("<space>",             confirm)
-        root.bind("q",                   cancel)
-        root.bind("<Escape>",            cancel)
+        canvas.bind("<ButtonPress-1>",   on_press)
+        canvas.bind("<B1-Motion>",        on_drag)
+        canvas.bind("<ButtonRelease-1>",  on_release)
+        root.bind("<Return>",             confirm)
+        root.bind("<space>",              confirm)
+        root.bind("r",                    reset)
+        root.bind("R",                    reset)
+        root.bind("q",                    cancel)
+        root.bind("Q",                    cancel)
+        root.bind("<Escape>",             cancel)
 
+        update_frame()
         root.mainloop()
         try:
             root.destroy()
-        except tk.TclError:
+        except Exception:
             pass
 
         if roi_out[0]:
@@ -144,3 +165,9 @@ class ROISelector:
             print(f"[INFO] ROI selected: x={x} y={y} w={w} h={h}")
 
         return roi_out[0]
+
+    @staticmethod
+    def _hint(problem: str, fix: str) -> None:
+        print(f"[ERROR] {problem}.")
+        print(f"        {fix}")
+        print("        Or skip the GUI:  python main.py --roi X Y W H")
