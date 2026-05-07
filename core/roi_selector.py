@@ -46,6 +46,16 @@ class ROISelector:
         """
         WIN = "DefectVision — Select Print ROI  [Drag] [ENTER=confirm] [R=reset] [Q=quit]"
         cv2.namedWindow(WIN, cv2.WINDOW_NORMAL)
+
+        # Render one frame before attaching the mouse callback.
+        # Qt/GTK backends create the native window handle only after the
+        # first imshow+waitKey — calling setMouseCallback before that gives
+        # a NULL window handler and crashes.
+        ret, frame = cap.read()
+        if ret:
+            cv2.imshow(WIN, frame)
+            cv2.waitKey(1)
+
         cv2.setMouseCallback(WIN, self._on_mouse)
 
         while True:
