@@ -11,6 +11,8 @@ from config import (
     SSIM_WEIGHT,
     EDGE_WEIGHT,
     PIXEL_WEIGHT,
+    EDGE_SCORE_SCALE,
+    PIXEL_SCORE_SCALE,
     DEFECT_SCORE_THRESHOLD,
     CHANGED_PIXEL_RATIO_THRESHOLD,
 )
@@ -115,11 +117,9 @@ class Inspector:
         result.edge_diff_score = float(np.count_nonzero(edge_diff) / edge_diff.size)
 
         # ---- 4. Composite defect score ------------------------------
-        # ssim_component: 0 when SSIM=1, grows as SSIM drops
-        ssim_component = float(np.clip(1.0 - ssim_score, 0.0, 1.0))
-        # Scale edge and pixel scores so they are comparable to ssim_component
-        edge_component = float(np.clip(result.edge_diff_score * 6.0, 0.0, 1.0))
-        pixel_component = float(np.clip(result.pixel_diff_score * 12.0, 0.0, 1.0))
+        ssim_component  = float(np.clip(1.0 - ssim_score, 0.0, 1.0))
+        edge_component  = float(np.clip(result.edge_diff_score  * EDGE_SCORE_SCALE,  0.0, 1.0))
+        pixel_component = float(np.clip(result.pixel_diff_score * PIXEL_SCORE_SCALE, 0.0, 1.0))
 
         defect_score = (
             SSIM_WEIGHT   * ssim_component +

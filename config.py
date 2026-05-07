@@ -56,15 +56,23 @@ PIXEL_DIFF_THRESHOLD = 15    # Lowered from 30 — catches subtle debris and fin
 # This catches thin strings, fine debris, and small text additions that
 # affect only a small area but are clearly real changes.
 # Set to 0.0 to disable and rely on composite score only.
-CHANGED_PIXEL_RATIO_THRESHOLD = 0.008   # 0.8 % of ROI pixels changed = defect
+CHANGED_PIXEL_RATIO_THRESHOLD = 0.07    # 7 % — raised from 0.8 % because 1-px
+# letter-edge halos on a moving object routinely affect 5–7 % of ROI pixels.
 
 # ---- Defect scoring (weighted combination) ------------------
 SSIM_WEIGHT   = 0.50
 EDGE_WEIGHT   = 0.25
-PIXEL_WEIGHT  = 0.25   # Raised from 0.15 — pixel changes carry more weight
+PIXEL_WEIGHT  = 0.25
 
-# Combined defect score: 0.0 = perfect, 1.0 = severe defect
-DEFECT_SCORE_THRESHOLD = 0.18   # Lowered from 0.30 for higher sensitivity
+# Scaling factors that normalise edge/pixel fraction scores into [0, 1].
+# Lower values = more tolerant of alignment-induced edge halos on moving objects.
+# Raise them back toward 6.0 / 12.0 for a static-camera setup.
+EDGE_SCORE_SCALE  = 4.0   # applied to edge_diff_score  (was hardcoded 6.0)
+PIXEL_SCORE_SCALE = 8.0   # applied to pixel_diff_score (was hardcoded 12.0)
+
+# Combined defect score: 0.0 = perfect, 1.0 = severe defect.
+# Raised from 0.18 — moving-object alignment noise raises the baseline score.
+DEFECT_SCORE_THRESHOLD = 0.32
 
 # ---- Temporal consistency filter ----------------------------
 # Prevents single noisy frames from triggering false alarms.
