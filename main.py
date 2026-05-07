@@ -218,9 +218,9 @@ def run_inspection(
             roi_bgr   = _grab_roi(frame, current_roi)
             live_gray = preprocessor.process(roi_bgr)
 
-            # ---- Alignment (only when position lock is off) ----------
-            if position_lock is None:
-                live_gray = aligner.align(ref_gray, live_gray)
+            # ---- Alignment: phase correlation corrects residual ±1-2 px
+            # jitter left over after template-match integer positioning.
+            live_gray = aligner.align(ref_gray, live_gray)
 
             # ---- Structural inspection -------------------------------
             result = inspector.inspect(ref_gray, live_gray)
