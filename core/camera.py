@@ -84,7 +84,7 @@ class PiCamera2Camera:
 
         self._picam2 = Picamera2()
         cfg = self._picam2.create_preview_configuration(
-            main={"size": (width, height), "format": "RGB888"},
+            main={"size": (width, height), "format": "BGR888"},
             display=None,
         )
         self._picam2.configure(cfg)
@@ -97,8 +97,8 @@ class PiCamera2Camera:
         return True
 
     def read(self) -> tuple[bool, np.ndarray]:
-        frame_rgb = self._picam2.capture_array("main")
-        return True, cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+        # BGR888 format gives native OpenCV byte order — no conversion needed
+        return True, self._picam2.capture_array("main")
 
     def release(self) -> None:
         self._picam2.stop()
