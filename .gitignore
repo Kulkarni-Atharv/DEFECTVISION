@@ -23,10 +23,11 @@ results_cm5/
 # Model weights (large binary files — store in releases or LFS)
 weights/
 
-# IDE
+# IDE / Claude Code
 .vscode/
 .idea/
 *.code-workspace
+.claude/
 
 # OS
 .DS_Store

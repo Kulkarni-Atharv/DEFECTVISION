@@ -54,7 +54,7 @@ PIXEL_DIFF_THRESHOLD = 15    # Lowered from 30 — catches subtle debris and fin
 # This catches thin strings, fine debris, and small text additions that
 # affect only a small area but are clearly real changes.
 # Set to 0.0 to disable and rely on composite score only.
-CHANGED_PIXEL_RATIO_THRESHOLD = 0.004   # 0.4 % of ROI pixels changed = defect
+CHANGED_PIXEL_RATIO_THRESHOLD = 0.008   # 0.4 % of ROI pixels changed = defect
 
 # ---- Defect scoring (weighted combination) ------------------
 SSIM_WEIGHT   = 0.50
