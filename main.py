@@ -3,6 +3,7 @@ DefectVision — Real-time print defect inspection
 ================================================
 Entry point.  Run with:
     python main.py
+    python main.py --roi 100 50 400 200   # skip GUI ROI selector
 
 Key bindings (during inspection):
     Q      — quit
@@ -11,6 +12,7 @@ Key bindings (during inspection):
     SPACE  — pause / resume
 """
 from __future__ import annotations
+import argparse
 import sys
 import time
 import cv2
@@ -246,6 +248,13 @@ def run_inspection(
 # ====================================================================
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="DefectVision print defect inspection")
+    parser.add_argument(
+        "--roi", nargs=4, type=int, metavar=("X", "Y", "W", "H"),
+        help="Skip GUI ROI selector and use fixed coordinates  e.g. --roi 100 50 400 200"
+    )
+    args = parser.parse_args()
+
     # ---- Camera ----------------------------------------------------
     print(f"[INFO] Starting camera (backend={CAMERA_BACKEND}) …")
     cam = create_camera(
@@ -265,12 +274,16 @@ def main() -> None:
     print(f"[INFO] Camera ready: {w}×{h} @ {cam.get_fps():.0f} fps")
 
     # ---- ROI selection ---------------------------------------------
-    print("[INFO] Select the print ROI on the live feed.")
-    roi = ROISelector().select(cam)
-    if roi is None:
-        print("[INFO] ROI selection cancelled.  Exiting.")
-        cam.release()
-        sys.exit(0)
+    if args.roi:
+        roi = tuple(args.roi)  # (x, y, w, h) from CLI
+        print(f"[INFO] ROI from CLI: x={roi[0]} y={roi[1]} w={roi[2]} h={roi[3]}")
+    else:
+        print("[INFO] Select the print ROI on the live feed.")
+        roi = ROISelector().select(cam)
+        if roi is None:
+            print("[INFO] ROI selection cancelled.  Exiting.")
+            cam.release()
+            sys.exit(0)
 
     x, y, w, h = roi
     print(f"[INFO] ROI: x={x} y={y} w={w} h={h}")
