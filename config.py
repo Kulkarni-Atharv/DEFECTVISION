@@ -34,8 +34,10 @@ DENOISE_KERNEL_SIZE = 3      # Gaussian blur kernel size (must be odd); 1 = disa
 
 # ---- Alignment (phase correlation) --------------------------
 ALIGN_ENABLED = True
-# Max fraction of ROI size allowed as shift — rejects unreliable correlations
-ALIGN_MAX_SHIFT_RATIO = 0.08  # 8 % of ROI width/height
+# Max fraction of ROI size allowed as shift — rejects unreliable correlations.
+# With position lock active, template-match variance can be 10-15 px, so this
+# must be large enough for the aligner to cover that residual offset.
+ALIGN_MAX_SHIFT_RATIO = 0.25  # 25 % of ROI width/height (was 0.08)
 
 # ---- Inspection thresholds ----------------------------------
 # SSIM: 0 = completely different, 1 = identical
@@ -79,7 +81,7 @@ CORNER_ACCENT_LENGTH = 18    # Length of corner bracket lines on main feed
 # Replaces the fixed-ROI crop with template matching so the print region
 # is found dynamically each frame, regardless of conveyor position.
 POSITION_LOCK_ENABLED        = True
-POSITION_LOCK_THRESHOLD      = 0.65   # min normalised match confidence (0–1)
+POSITION_LOCK_THRESHOLD      = 0.72   # min normalised match confidence (0–1)
 POSITION_LOCK_SEARCH_MARGIN  = 80     # px around last position for fast search
 POSITION_LOCK_BLUR_THRESHOLD = 30.0   # Laplacian variance below this = skip frame; 0 = disabled
 
