@@ -39,27 +39,35 @@ ALIGN_MAX_SHIFT_RATIO = 0.08  # 8 % of ROI width/height
 
 # ---- Inspection thresholds ----------------------------------
 # SSIM: 0 = completely different, 1 = identical
-SSIM_THRESHOLD = 0.82
-SSIM_WIN_SIZE = 7            # Window size for local SSIM; smaller catches finer defects
+SSIM_THRESHOLD = 0.80
+SSIM_WIN_SIZE = 5            # Smaller window = catches finer / more localised defects
 
 # Edge difference: fraction of pixels whose edges differ
-EDGE_DIFF_THRESHOLD = 0.08
+EDGE_DIFF_THRESHOLD = 0.06
 
-# Raw pixel difference: absolute intensity difference treated as defective
-PIXEL_DIFF_THRESHOLD = 30    # 0–255
+# Raw pixel difference: absolute intensity difference per pixel (0–255)
+PIXEL_DIFF_THRESHOLD = 15    # Lowered from 30 — catches subtle debris and fine strings
+
+# ---- Hard pixel-change override -----------------------------
+# If this fraction of ROI pixels exceeds PIXEL_DIFF_THRESHOLD, the frame is
+# flagged as defective immediately — regardless of the composite SSIM score.
+# This catches thin strings, fine debris, and small text additions that
+# affect only a small area but are clearly real changes.
+# Set to 0.0 to disable and rely on composite score only.
+CHANGED_PIXEL_RATIO_THRESHOLD = 0.004   # 0.4 % of ROI pixels changed = defect
 
 # ---- Defect scoring (weighted combination) ------------------
-SSIM_WEIGHT = 0.60
-EDGE_WEIGHT = 0.25
-PIXEL_WEIGHT = 0.15
+SSIM_WEIGHT   = 0.50
+EDGE_WEIGHT   = 0.25
+PIXEL_WEIGHT  = 0.25   # Raised from 0.15 — pixel changes carry more weight
 
 # Combined defect score: 0.0 = perfect, 1.0 = severe defect
-DEFECT_SCORE_THRESHOLD = 0.30
+DEFECT_SCORE_THRESHOLD = 0.18   # Lowered from 0.30 for higher sensitivity
 
 # ---- Temporal consistency filter ----------------------------
 # Prevents single noisy frames from triggering false alarms.
-TEMPORAL_WINDOW = 8          # Number of frames in rolling window
-TEMPORAL_DEFECT_RATIO = 0.60 # Fraction of window frames that must flag defect
+TEMPORAL_WINDOW = 6          # Slightly shorter for faster response
+TEMPORAL_DEFECT_RATIO = 0.50 # 50 % of window frames must flag (was 60 %)
 
 # ---- Visualization ------------------------------------------
 HEATMAP_ALPHA = 0.45         # 0 = no heatmap, 1 = full heatmap overlay

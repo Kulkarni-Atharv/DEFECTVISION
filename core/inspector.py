@@ -12,6 +12,7 @@ from config import (
     EDGE_WEIGHT,
     PIXEL_WEIGHT,
     DEFECT_SCORE_THRESHOLD,
+    CHANGED_PIXEL_RATIO_THRESHOLD,
 )
 
 
@@ -127,6 +128,15 @@ class Inspector:
         )
         result.defect_score = float(np.clip(defect_score, 0.0, 1.0))
         result.is_defect = result.defect_score >= DEFECT_SCORE_THRESHOLD
+
+        # ---- Hard pixel-change override -----------------------------
+        # Catches thin debris, strings, and fine additions that affect only
+        # a small area — their SSIM impact is too low to reach the composite
+        # threshold, but the raw pixel count is unambiguous.
+        if (CHANGED_PIXEL_RATIO_THRESHOLD > 0
+                and result.pixel_diff_score >= CHANGED_PIXEL_RATIO_THRESHOLD):
+            result.is_defect = True
+            result.defect_score = max(result.defect_score, DEFECT_SCORE_THRESHOLD)
 
         # ---- 5. Defect localisation ---------------------------------
         # Build a binary mask from the (inverted) SSIM map.
