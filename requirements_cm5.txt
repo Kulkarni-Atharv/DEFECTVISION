@@ -1,22 +1,21 @@
 # DefectVision — Raspberry Pi CM5 deployment requirements
 #
-# Install:
+# STEP 1 — core packages (no GPU junk):
 #   pip install -r requirements_cm5.txt
+#
+# STEP 2 — PyTorch CPU-only (only needed for capture_cm5.py / CRAFT):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+#
+#   DO NOT run: pip install torch   <-- pulls 1.5 GB of CUDA libraries on ARM Linux
+#
+# STEP 3 — Picamera2:
 #   sudo apt install -y python3-picamera2
 #
 # CRAFT source files (craft.py, craft_utils.py, imgproc.py, refinenet.py)
-# must be present in the repo root if using capture_cm5.py.
-# Clone from: https://github.com/clovaai/CRAFT-pytorch
+# must be present in the repo root.  Clone from:
+#   https://github.com/clovaai/CRAFT-pytorch
 
-# Core computer vision
+# Core inspection system (main.py) — no torch needed here
 opencv-python>=4.8.0
 scikit-image>=0.21.0
 numpy>=1.24.0
-
-# CRAFT text detection (only needed for capture_cm5.py)
-torch>=2.0.0
-torchvision>=0.15.0
-
-# picamera2 is installed via apt (recommended) or pip:
-#   sudo apt install -y python3-picamera2
-# picamera2>=0.3.12
