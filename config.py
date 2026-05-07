@@ -54,7 +54,7 @@ PIXEL_DIFF_THRESHOLD = 15    # Lowered from 30 — catches subtle debris and fin
 # This catches thin strings, fine debris, and small text additions that
 # affect only a small area but are clearly real changes.
 # Set to 0.0 to disable and rely on composite score only.
-CHANGED_PIXEL_RATIO_THRESHOLD = 0.008   # 0.4 % of ROI pixels changed = defect
+CHANGED_PIXEL_RATIO_THRESHOLD = 0.008   # 0.8 % of ROI pixels changed = defect
 
 # ---- Defect scoring (weighted combination) ------------------
 SSIM_WEIGHT   = 0.50
@@ -74,6 +74,14 @@ HEATMAP_ALPHA = 0.45         # 0 = no heatmap, 1 = full heatmap overlay
 ROI_BORDER_THICKNESS = 3
 PANEL_CELL_SCALE = 2.5       # Display scale multiplier for each panel cell
 CORNER_ACCENT_LENGTH = 18    # Length of corner bracket lines on main feed
+
+# ---- Position Lock (moving object tracking) -------------------------
+# Replaces the fixed-ROI crop with template matching so the print region
+# is found dynamically each frame, regardless of conveyor position.
+POSITION_LOCK_ENABLED        = True
+POSITION_LOCK_THRESHOLD      = 0.65   # min normalised match confidence (0–1)
+POSITION_LOCK_SEARCH_MARGIN  = 80     # px around last position for fast search
+POSITION_LOCK_BLUR_THRESHOLD = 30.0   # Laplacian variance below this = skip frame; 0 = disabled
 
 # ---- Logging ------------------------------------------------
 LOG_ENABLED = True

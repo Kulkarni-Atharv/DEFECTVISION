@@ -25,6 +25,7 @@ from config import (
     PICAMERA2_WIDTH, PICAMERA2_HEIGHT, PICAMERA2_FPS, PICAMERA2_WARMUP_S,
     REFERENCE_FRAME_COUNT, REFERENCE_WARMUP_FRAMES,
     LOG_DIR,
+    POSITION_LOCK_ENABLED,
 )
 from core.camera          import create_camera
 from core.roi_selector    import ROISelector
@@ -33,10 +34,12 @@ from core.aligner         import Aligner
 from core.inspector       import Inspector
 from core.temporal_filter import TemporalFilter
 from core.visualizer      import Visualizer
+from core.position_lock   import PositionLock
 from utils.logger         import DefectLogger
 
 import os
 os.makedirs(LOG_DIR, exist_ok=True)
+
 
 def _grab_roi(frame: np.ndarray, roi: tuple[int, int, int, int]) -> np.ndarray:
     x, y, w, h = roi
@@ -52,28 +55,39 @@ def capture_reference(
     roi: tuple[int, int, int, int],
     preprocessor: Preprocessor,
     n: int = REFERENCE_FRAME_COUNT,
-) -> np.ndarray:
+) -> tuple[np.ndarray, np.ndarray]:
     """
-    Average N preprocessed frames to obtain a stable, noise-reduced
-    reference image.  Averaging in float64 then converting back to uint8
-    preserves fine detail that matters for micro-defect detection.
+    Average N frames to build a stable reference.
+
+    Returns
+    -------
+    (ref_gray, ref_template)
+      ref_gray     — CLAHE-processed uint8, used by Inspector for SSIM comparison.
+      ref_template — raw grayscale uint8, used by PositionLock for template matching.
+                     Raw gray keeps the template stable across lighting variation
+                     and matches against the equally raw per-frame grayscale.
     """
-    accumulator: np.ndarray | None = None
+    acc_processed: np.ndarray | None = None
+    acc_raw:       np.ndarray | None = None
     collected = 0
 
     while collected < n:
         ret, frame = cap.read()
         if not ret:
             continue
-        gray = preprocessor.process(_grab_roi(frame, roi))
-        if accumulator is None:
-            accumulator = np.float64(gray)
+        crop = _grab_roi(frame, roi)
+        processed = preprocessor.process(crop)
+        raw_gray  = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        if acc_processed is None:
+            acc_processed = np.float64(processed)
+            acc_raw       = np.float64(raw_gray)
         else:
-            accumulator += gray
+            acc_processed += processed
+            acc_raw       += raw_gray
         collected += 1
         time.sleep(1.0 / CAMERA_FPS)
 
-    return np.uint8(accumulator / n)
+    return np.uint8(acc_processed / n), np.uint8(acc_raw / n)
 
 
 # ====================================================================
@@ -84,11 +98,11 @@ def wait_for_reference_capture(
     cap,
     roi: tuple[int, int, int, int],
     preprocessor: Preprocessor,
-) -> np.ndarray | None:
+) -> tuple[np.ndarray, np.ndarray] | None:
     """
     Show a live preview with the ROI highlighted.
     The user places a clean sample and presses SPACE to capture.
-    Returns the reference grayscale array or None on abort.
+    Returns (ref_gray, ref_template) or None on abort.
     """
     WIN = "DefectVision — Reference Capture  [SPACE=capture] [Q=quit]"
     cv2.namedWindow(WIN, cv2.WINDOW_NORMAL)
@@ -108,9 +122,9 @@ def wait_for_reference_capture(
         key = cv2.waitKey(1) & 0xFF
         if key == ord(' '):
             print(f"[INFO] Capturing {REFERENCE_FRAME_COUNT} reference frames …")
-            ref = capture_reference(cap, roi, preprocessor)
+            ref_gray, ref_template = capture_reference(cap, roi, preprocessor)
             cv2.destroyWindow(WIN)
-            return ref
+            return ref_gray, ref_template
         elif key == ord('q'):
             cv2.destroyWindow(WIN)
             return None
@@ -130,9 +144,12 @@ def run_inspection(
     temporal: TemporalFilter,
     visualizer: Visualizer,
     logger: DefectLogger,
+    position_lock: PositionLock | None = None,
 ) -> None:
     inspector.set_reference(ref_gray)
     temporal.reset()
+    if position_lock is not None:
+        position_lock.reset()
 
     WIN_MAIN  = "DefectVision — Live Feed"
     WIN_PANEL = "DefectVision — Inspection Panel"
@@ -144,11 +161,12 @@ def run_inspection(
     fps_t0      = time.monotonic()
     fps_counter = 0
 
-    # Dummy result for the first few frames while the temporal window fills
     from core.inspector import InspectionResult
     result           = InspectionResult()
     smoothed_score   = 0.0
     confirmed_defect = False
+    match_conf       = 0.0
+    current_roi      = roi     # updated each frame when position lock is active
     paused           = False
 
     print("[INFO] Inspection running.  Q=quit  R=new reference  S=snapshot  SPACE=pause")
@@ -162,23 +180,52 @@ def run_inspection(
             frame_num   += 1
             fps_counter += 1
 
-            # FPS measurement
             if fps_counter >= 30:
-                fps = fps_counter / max(time.monotonic() - fps_t0, 1e-6)
+                fps         = fps_counter / max(time.monotonic() - fps_t0, 1e-6)
                 fps_t0      = time.monotonic()
                 fps_counter = 0
 
-            # Extract and preprocess live ROI
-            roi_bgr  = _grab_roi(frame, roi)
+            # ---- Position lock: find print in frame ------------------
+            if position_lock is not None:
+                frame_gray_full = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                match = position_lock.find(frame_gray_full)
+
+                if match is None:
+                    # Print not found or blurry — show searching state, skip inspection
+                    main_display = frame.copy()
+                    main_display = visualizer.draw_main_overlay(
+                        main_display, current_roi,
+                        confirmed_defect=False, smoothed_score=0.0,
+                        warming_up=False, match_conf=0.0, searching=True,
+                    )
+                    cv2.putText(main_display,
+                                f"FPS: {fps:.1f}  Frame: {frame_num}",
+                                (10, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (200, 200, 200), 1)
+                    cv2.imshow(WIN_MAIN, main_display)
+                    key = cv2.waitKey(1) & 0xFF
+                    if key == ord('q'):
+                        break
+                    elif key == ord(' '):
+                        paused = not paused
+                    continue
+
+                current_roi, match_conf = match
+            else:
+                current_roi = roi
+                match_conf  = 1.0
+
+            # ---- Extract and preprocess live ROI ---------------------
+            roi_bgr   = _grab_roi(frame, current_roi)
             live_gray = preprocessor.process(roi_bgr)
 
-            # Align to compensate for sub-pixel vibration / position jitter
-            live_aligned = aligner.align(ref_gray, live_gray)
+            # ---- Alignment (only when position lock is off) ----------
+            if position_lock is None:
+                live_gray = aligner.align(ref_gray, live_gray)
 
-            # Structural inspection
-            result = inspector.inspect(ref_gray, live_aligned)
+            # ---- Structural inspection -------------------------------
+            result = inspector.inspect(ref_gray, live_gray)
 
-            # Temporal consistency — suppress single-frame noise
+            # ---- Temporal consistency --------------------------------
             warming_up = not temporal.window_full
             smoothed_score, confirmed_defect = temporal.update(
                 result.defect_score, result.is_defect
@@ -186,31 +233,31 @@ def run_inspection(
             if warming_up:
                 confirmed_defect = False
 
-            # Log
+            # ---- Log -------------------------------------------------
             logger.log(frame_num, result, confirmed_defect, smoothed_score, roi_bgr)
 
-            # ---- Main feed display --------------------------------
+            # ---- Main feed display -----------------------------------
             main_display = frame.copy()
             main_display = visualizer.draw_main_overlay(
-                main_display, roi, confirmed_defect, smoothed_score, warming_up
+                main_display, current_roi, confirmed_defect, smoothed_score,
+                warming_up, match_conf,
             )
             cv2.putText(main_display,
                         f"FPS: {fps:.1f}  Frame: {frame_num}",
                         (10, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (200, 200, 200), 1)
             cv2.imshow(WIN_MAIN, main_display)
 
-            # ---- Inspection panel ---------------------------------
+            # ---- Inspection panel ------------------------------------
             panel = visualizer.build_panel(
-                roi_bgr, ref_gray, live_aligned,
-                result, confirmed_defect, smoothed_score, fps, warming_up
+                roi_bgr, ref_gray, live_gray,
+                result, confirmed_defect, smoothed_score, fps, warming_up, match_conf,
             )
             cv2.imshow(WIN_PANEL, panel)
 
         else:
-            # Paused — keep windows alive
             cv2.waitKey(50)
 
-        # ---- Key handling ----------------------------------------
+        # ---- Key handling --------------------------------------------
         key = cv2.waitKey(1) & 0xFF
 
         if key == ord('q'):
@@ -222,22 +269,24 @@ def run_inspection(
 
         elif key == ord('r'):
             print("[INFO] Recapturing reference — place CLEAN sample, then press SPACE …")
-            new_ref = wait_for_reference_capture(cap, roi, preprocessor)
-            if new_ref is not None:
-                ref_gray = new_ref
+            result = wait_for_reference_capture(cap, roi, preprocessor)
+            if result is not None:
+                ref_gray, ref_template = result
                 inspector.set_reference(ref_gray)
                 temporal.reset()
+                if position_lock is not None:
+                    position_lock._tpl = ref_template
+                    position_lock.reset()
                 print("[INFO] Reference updated.")
             else:
                 print("[INFO] Reference recapture cancelled.")
 
         elif key == ord('s'):
-            import cv2 as _cv2
             snap_path = os.path.join(
                 LOG_DIR,
                 f"snapshot_{time.strftime('%Y%m%d_%H%M%S')}.png"
             )
-            _cv2.imwrite(snap_path, roi_bgr)
+            cv2.imwrite(snap_path, roi_bgr)
             print(f"[INFO] Snapshot saved: {snap_path}")
 
     cv2.destroyAllWindows()
@@ -275,7 +324,7 @@ def main() -> None:
 
     # ---- ROI selection ---------------------------------------------
     if args.roi:
-        roi = tuple(args.roi)  # (x, y, w, h) from CLI
+        roi = tuple(args.roi)
         print(f"[INFO] ROI from CLI: x={roi[0]} y={roi[1]} w={roi[2]} h={roi[3]}")
     else:
         print("[INFO] Select the print ROI on the live feed.")
@@ -297,19 +346,29 @@ def main() -> None:
     logger       = DefectLogger()
 
     # ---- Reference capture -----------------------------------------
-    ref_gray = wait_for_reference_capture(cam, roi, preprocessor)
-    if ref_gray is None:
+    ref_result = wait_for_reference_capture(cam, roi, preprocessor)
+    if ref_result is None:
         print("[INFO] Reference capture cancelled.  Exiting.")
         cam.release()
         sys.exit(0)
 
+    ref_gray, ref_template = ref_result
     print(f"[INFO] Reference shape: {ref_gray.shape}  dtype: {ref_gray.dtype}")
+
+    # ---- Position lock ---------------------------------------------
+    position_lock: PositionLock | None = None
+    if POSITION_LOCK_ENABLED:
+        position_lock = PositionLock(ref_template)
+        print(f"[INFO] Position lock ON — template {ref_template.shape[1]}×{ref_template.shape[0]} px")
+    else:
+        print("[INFO] Position lock OFF — fixed ROI mode")
 
     # ---- Inspection loop -------------------------------------------
     try:
         run_inspection(
             cam, roi, ref_gray,
             preprocessor, aligner, inspector, temporal, visualizer, logger,
+            position_lock,
         )
     finally:
         cam.release()

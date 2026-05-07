@@ -13,6 +13,7 @@ _GREEN  = (30,  200,  30)
 _RED    = (20,   20, 220)
 _YELLOW = (0,   210, 255)
 _WHITE  = (255, 255, 255)
+_GRAY   = (160, 160, 160)
 
 
 class Visualizer:
@@ -34,9 +35,18 @@ class Visualizer:
         confirmed_defect: bool,
         smoothed_score: float,
         warming_up: bool = False,
+        match_conf: float = 1.0,
+        searching: bool = False,
     ) -> np.ndarray:
         x, y, w, h = roi
-        color = _YELLOW if warming_up else (_RED if confirmed_defect else _GREEN)
+        if searching:
+            color = _GRAY
+        elif warming_up:
+            color = _YELLOW
+        elif confirmed_defect:
+            color = _RED
+        else:
+            color = _GREEN
 
         # Solid border
         cv2.rectangle(frame, (x - 2, y - 2), (x + w + 2, y + h + 2),
@@ -54,12 +64,14 @@ class Visualizer:
             cv2.line(frame, (px, py), (px, py + dy * cl), color, 3)
 
         # Status badge above ROI
-        if warming_up:
+        if searching:
+            badge = "SEARCHING..."
+        elif warming_up:
             badge = "WARMING UP..."
         elif confirmed_defect:
-            badge = f"DEFECT  score={smoothed_score:.3f}"
+            badge = f"DEFECT  score={smoothed_score:.3f}  match={match_conf:.2f}"
         else:
-            badge = f"PASS    score={smoothed_score:.3f}"
+            badge = f"PASS    score={smoothed_score:.3f}  match={match_conf:.2f}"
 
         text_y = max(y - 10, 20)
         cv2.putText(frame, badge, (x, text_y),
@@ -79,6 +91,7 @@ class Visualizer:
         smoothed_score: float,
         fps: float,
         warming_up: bool = False,
+        match_conf: float = 1.0,
     ) -> np.ndarray:
         """
         Assemble a 2-column × 2-row grid:
@@ -139,13 +152,14 @@ class Visualizer:
 
         if warming_up:
             bar_color = _YELLOW
-            status_text = f"WARMING UP  |  FPS: {fps:.1f}"
+            status_text = f"WARMING UP  |  FPS: {fps:.1f}  Match: {match_conf:.2f}"
         elif confirmed_defect:
             bar_color = _RED
             status_text = (
                 f"DEFECT  |  Score: {smoothed_score:.3f}"
                 f"  SSIM: {result.ssim_score:.3f}"
                 f"  EdgeDiff: {result.edge_diff_score:.3f}"
+                f"  Match: {match_conf:.2f}"
                 f"  FPS: {fps:.1f}"
             )
         else:
@@ -154,6 +168,7 @@ class Visualizer:
                 f"PASS    |  Score: {smoothed_score:.3f}"
                 f"  SSIM: {result.ssim_score:.3f}"
                 f"  EdgeDiff: {result.edge_diff_score:.3f}"
+                f"  Match: {match_conf:.2f}"
                 f"  FPS: {fps:.1f}"
             )
 
