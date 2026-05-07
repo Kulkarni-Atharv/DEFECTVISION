@@ -61,10 +61,11 @@ class OpenCVCamera:
 
 class PiCamera2Camera:
     """
-    Picamera2 backend for CM5.
+    Picamera2 backend for CM5 / IMX296 global-shutter sensor.
 
-    Captures in RGB888, converts to BGR for OpenCV compatibility.
-    The 2-second warmup lets AEC/AWB converge on the IMX296 global-shutter sensor.
+    Uses the default picamera2 preview format (XBGR8888, 4-channel).
+    capture_array() may return 3-channel (RGB) or 4-channel (RGBA/XBGR)
+    depending on the platform; both are handled and converted to BGR.
     """
 
     def __init__(
@@ -83,9 +84,11 @@ class PiCamera2Camera:
             ) from exc
 
         self._picam2 = Picamera2()
+        # No explicit format — let picamera2 pick its native default (XBGR8888).
+        # Forcing RGB888/BGR888 causes colour inversions on some firmware versions.
         cfg = self._picam2.create_preview_configuration(
-            main={"size": (width, height), "format": "BGR888"},
-            display=None,
+            main={"size": (width, height)},
+            display=None,   # OpenCV owns the display
         )
         self._picam2.configure(cfg)
         self._picam2.start()
@@ -97,8 +100,14 @@ class PiCamera2Camera:
         return True
 
     def read(self) -> tuple[bool, np.ndarray]:
-        # BGR888 format gives native OpenCV byte order — no conversion needed
-        return True, self._picam2.capture_array("main")
+        frame = self._picam2.capture_array()
+        # picamera2 default format is XBGR8888 (4-ch) on most firmware,
+        # but may be RGB (3-ch) on others — handle both.
+        if frame.shape[2] == 4:
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
+        else:
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        return True, frame
 
     def release(self) -> None:
         self._picam2.stop()
