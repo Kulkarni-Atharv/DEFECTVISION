@@ -30,12 +30,14 @@ from config import (
 from core.camera          import create_camera
 from core.roi_selector    import ROISelector
 from core.preprocessor    import Preprocessor
-from core.aligner         import Aligner
+from core.feature_aligner import FeatureAligner
+from core.text_mask       import TextMask
 from core.inspector       import Inspector
 from core.temporal_filter import TemporalFilter
 from core.visualizer      import Visualizer
 from core.position_lock   import PositionLock
 from utils.logger         import DefectLogger
+from config               import TEXT_MASK_ENABLED
 
 import os
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -139,14 +141,16 @@ def run_inspection(
     roi: tuple[int, int, int, int],
     ref_gray: np.ndarray,
     preprocessor: Preprocessor,
-    aligner: Aligner,
+    aligner: FeatureAligner,
     inspector: Inspector,
     temporal: TemporalFilter,
     visualizer: Visualizer,
     logger: DefectLogger,
     position_lock: PositionLock | None = None,
+    text_mask: TextMask | None = None,
 ) -> None:
     inspector.set_reference(ref_gray)
+    aligner.set_reference(ref_gray)
     temporal.reset()
     if position_lock is not None:
         position_lock.reset()
@@ -218,12 +222,11 @@ def run_inspection(
             roi_bgr   = _grab_roi(frame, current_roi)
             live_gray = preprocessor.process(roi_bgr)
 
-            # ---- Alignment: phase correlation corrects residual ±1-2 px
-            # jitter left over after template-match integer positioning.
-            live_gray = aligner.align(ref_gray, live_gray)
+            # ---- Alignment: ORB homography corrects rotation + residual shift
+            live_gray, _ = aligner.align(ref_gray, live_gray)
 
-            # ---- Structural inspection -------------------------------
-            result = inspector.inspect(ref_gray, live_gray)
+            # ---- Structural inspection (text-aware when mask available) --
+            result = inspector.inspect(ref_gray, live_gray, text_mask)
 
             # ---- Temporal consistency --------------------------------
             warming_up = not temporal.window_full
@@ -269,11 +272,16 @@ def run_inspection(
 
         elif key == ord('r'):
             print("[INFO] Recapturing reference — place CLEAN sample, then press SPACE …")
-            result = wait_for_reference_capture(cap, roi, preprocessor)
-            if result is not None:
-                ref_gray, ref_template = result
+            recapture = wait_for_reference_capture(cap, roi, preprocessor)
+            if recapture is not None:
+                ref_gray, ref_template = recapture
                 inspector.set_reference(ref_gray)
+                aligner.set_reference(ref_gray)
                 temporal.reset()
+                if text_mask is not None:
+                    text_mask.build(ref_gray)
+                    print(f"[INFO] Text mask rebuilt: {text_mask.pixel_count} ink px, "
+                          f"{len(text_mask.char_rects)} chars")
                 if position_lock is not None:
                     position_lock._tpl = ref_template
                     position_lock.reset()
@@ -339,7 +347,7 @@ def main() -> None:
 
     # ---- Subsystem init --------------------------------------------
     preprocessor = Preprocessor()
-    aligner      = Aligner()
+    aligner      = FeatureAligner()
     inspector    = Inspector()
     temporal     = TemporalFilter()
     visualizer   = Visualizer()
@@ -355,6 +363,16 @@ def main() -> None:
     ref_gray, ref_template = ref_result
     print(f"[INFO] Reference shape: {ref_gray.shape}  dtype: {ref_gray.dtype}")
 
+    # ---- Text mask -------------------------------------------------
+    text_mask: TextMask | None = None
+    if TEXT_MASK_ENABLED:
+        text_mask = TextMask()
+        text_mask.build(ref_gray)
+        print(f"[INFO] Text mask: {text_mask.pixel_count} ink px, "
+              f"{len(text_mask.char_rects)} character regions")
+    else:
+        print("[INFO] Text mask OFF — whole-ROI comparison mode")
+
     # ---- Position lock ---------------------------------------------
     position_lock: PositionLock | None = None
     if POSITION_LOCK_ENABLED:
@@ -368,7 +386,7 @@ def main() -> None:
         run_inspection(
             cam, roi, ref_gray,
             preprocessor, aligner, inspector, temporal, visualizer, logger,
-            position_lock,
+            position_lock, text_mask,
         )
     finally:
         cam.release()

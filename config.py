@@ -93,6 +93,26 @@ POSITION_LOCK_THRESHOLD      = 0.72   # min normalised match confidence (0–1)
 POSITION_LOCK_SEARCH_MARGIN  = 80     # px around last position for fast search
 POSITION_LOCK_BLUR_THRESHOLD = 30.0   # Laplacian variance below this = skip frame; 0 = disabled
 
+# ---- Feature-based alignment (rotation-invariant) -------------------
+# Replaces phase-correlation aligner for crops with rotational variance.
+# Falls back to phase-correlation if ORB finds too few keypoints.
+FEATURE_ALIGNER_ENABLED  = True
+ORB_N_FEATURES           = 500    # Max ORB keypoints per image
+MIN_MATCH_COUNT          = 10     # Min RANSAC inliers to accept homography
+HOMOGRAPHY_RANSAC_THRESH = 5.0    # Reprojection error threshold (px)
+
+# ---- Text mask inspection -------------------------------------------
+# Focus pixel-diff and edge-diff scoring on ink pixels only.
+# Scores are then normalised against text-pixel count, not total ROI area.
+TEXT_MASK_ENABLED       = True
+TEXT_MASK_DILATE_ITER   = 2       # Dilation iterations to capture edge anti-alias pixels
+TEXT_MASK_MIN_CHAR_AREA = 20      # Min connected-component area (px²) = one character
+
+# Per-character ink-density change threshold: fraction of ink change
+# that flags a single character as defective (faded, missing, broken).
+# 0.20 = 20 % ink-density change in a character region.
+CHAR_INK_CHANGE_THRESHOLD = 0.20
+
 # ---- Logging ------------------------------------------------
 LOG_ENABLED = True
 LOG_DIR = "logs"

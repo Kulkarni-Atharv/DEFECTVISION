@@ -117,15 +117,21 @@ class Visualizer:
         # Top-left: reference
         cell_ref = gray_cell(ref_gray, "REFERENCE")
 
-        # Top-right: live with defect contours
+        # Top-right: live with defect contours + per-character status
         live_annotated = cv2.cvtColor(cv2.resize(live_gray, (cw, ch)), cv2.COLOR_GRAY2BGR)
+        scale_x = cw / max(roi_bgr.shape[1], 1)
+        scale_y = ch / max(roi_bgr.shape[0], 1)
         if result.defect_contours and result.defect_bboxes:
-            scale_x = cw / roi_bgr.shape[1]
-            scale_y = ch / roi_bgr.shape[0]
             for bx, by, bw, bh in result.defect_bboxes:
                 sx1, sy1 = int(bx * scale_x), int(by * scale_y)
                 sx2, sy2 = int((bx + bw) * scale_x), int((by + bh) * scale_y)
                 cv2.rectangle(live_annotated, (sx1, sy1), (sx2, sy2), _RED, 1)
+        for cr in result.char_results:
+            cx, cy, cw2, ch2 = cr.rect
+            sx1, sy1 = int(cx * scale_x), int(cy * scale_y)
+            sx2, sy2 = int((cx + cw2) * scale_x), int((cy + ch2) * scale_y)
+            color = _RED if cr.is_defect else _GREEN
+            cv2.rectangle(live_annotated, (sx1, sy1), (sx2, sy2), color, 1)
         self._cell_label(live_annotated, "LIVE")
         cell_live = live_annotated
 
