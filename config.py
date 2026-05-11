@@ -66,9 +66,11 @@ PIXEL_SCORE_SCALE = 8.0   # applied to pixel_diff_score (was hardcoded 12.0)
 DEFECT_SCORE_THRESHOLD = 0.32
 
 # ---- Temporal consistency filter ----------------------------
-# Prevents single noisy frames from triggering false alarms.
-TEMPORAL_WINDOW = 6          # Slightly shorter for faster response
-TEMPORAL_DEFECT_RATIO = 0.50 # 50 % of window frames must flag (was 60 %)
+# A defect is confirmed only when TEMPORAL_DEFECT_RATIO of the last
+# TEMPORAL_WINDOW frames independently flag a defect.
+# Wider window + higher ratio = more stable output, slower response.
+TEMPORAL_WINDOW       = 10   # frames in the rolling window
+TEMPORAL_DEFECT_RATIO = 0.70 # 70 % of frames must agree before confirming
 
 # ---- Visualization ------------------------------------------
 HEATMAP_ALPHA = 0.45         # 0 = no heatmap, 1 = full heatmap overlay
@@ -98,8 +100,13 @@ ILLUMINATION_CORRECT_ENABLED = True
 # positional/rotational shifts after alignment.
 # This is the ONLY signal that sets is_defect = True.
 ADDITION_DETECTION_ENABLED = True
-ADDITION_THRESHOLD         = 20   # intensity units; live must be this much darker
-ADDITION_MIN_AREA          = 15   # px² — minimum blob to report (rejects single-px noise)
+ADDITION_THRESHOLD         = 30   # intensity units; live must be this much darker.
+                                   # Camera noise is ±10–15; real marks darken by 80–160.
+                                   # Raise if flickering; lower if faint marks are missed.
+ADDITION_MIN_AREA          = 25   # px² — minimum blob area.  A 2×13 px line = 26 px².
+ADDITION_BLUR_KSIZE        = 5    # Gaussian blur kernel before threshold (must be odd).
+                                   # Averages out per-frame sensor noise spikes.
+                                   # Set to 1 to disable blur.
 
 # ---- Background debris detection (OFF by default) -------------------
 # Compact-blob search in the non-text region.  Not needed for the primary

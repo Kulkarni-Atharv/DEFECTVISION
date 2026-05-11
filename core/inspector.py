@@ -22,6 +22,7 @@ from config import (
     ADDITION_DETECTION_ENABLED,
     ADDITION_THRESHOLD,
     ADDITION_MIN_AREA,
+    ADDITION_BLUR_KSIZE,
     CHAR_INK_CHANGE_THRESHOLD,
 )
 
@@ -247,6 +248,13 @@ class Inspector:
                 live.astype(np.int32) - reference.astype(np.int32), 0, 255
             ).astype(np.uint8)
 
+        # Gaussian blur suppresses frame-to-frame sensor noise before thresholding.
+        # Real marks (large, strong) survive the blur; single-pixel noise spikes
+        # get averaged down below threshold and stop causing per-frame flicker.
+        if ADDITION_BLUR_KSIZE > 1:
+            ks = ADDITION_BLUR_KSIZE if ADDITION_BLUR_KSIZE % 2 == 1 else ADDITION_BLUR_KSIZE + 1
+            addition_map = cv2.GaussianBlur(addition_map, (ks, ks), 0)
+
         # Restrict to text region + margin; background changes are ignored
         if text_mask is not None and text_mask.is_ready():
             search_zone = cv2.dilate(text_mask.mask, _DEBRIS_KERNEL, iterations=2)
@@ -255,7 +263,7 @@ class Inspector:
         # Threshold
         _, binary = cv2.threshold(addition_map, ADDITION_THRESHOLD, 255, cv2.THRESH_BINARY)
 
-        # Remove 1-pixel-wide alignment edge halos
+        # Remove residual 1-pixel-wide alignment artifacts
         binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, _OPEN_KERNEL)
 
         contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
