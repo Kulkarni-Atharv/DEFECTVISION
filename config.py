@@ -82,11 +82,19 @@ CORNER_ACCENT_LENGTH = 18    # Length of corner bracket lines on main feed
 # Replaces the fixed-ROI crop with template matching so the print region
 # is found dynamically each frame, regardless of conveyor position.
 POSITION_LOCK_ENABLED        = True
-POSITION_LOCK_THRESHOLD      = 0.55   # Lowered from 0.72: template matching loses score at
-                                       # different angles — TextNormalizer corrects rotation
-                                       # after the crop, so a looser threshold is safe here.
+POSITION_LOCK_THRESHOLD      = 0.45   # NCC confidence; lowered because multi-angle search
+                                       # returns the best-rotation match, so even a looser
+                                       # threshold doesn't risk false matches.
 POSITION_LOCK_SEARCH_MARGIN  = 80     # px around last position for fast search
 POSITION_LOCK_BLUR_THRESHOLD = 30.0   # Laplacian variance below this = skip frame; 0 = disabled
+
+# Multi-angle template matching — makes PositionLock rotation-invariant.
+# Templates are pre-rotated at every ANGLE_STEP degrees from -ANGLE_RANGE
+# to +ANGLE_RANGE.  The best-matching rotation wins each frame.
+# TextNormalizer corrects fine rotation downstream, so coarse steps work.
+POSITION_LOCK_ANGLE_RANGE    = 90     # degrees each side (±90 = full half-turn coverage)
+POSITION_LOCK_ANGLE_STEP     = 10     # degrees between pre-rotated templates
+                                       # 10° step = 19 templates, ~5–8 ms on CM5
 
 # ---- Text rotation normalizer ---------------------------------------
 # Corrects in-plane rotation of the text crop so that reference and live

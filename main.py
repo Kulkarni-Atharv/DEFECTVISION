@@ -291,8 +291,7 @@ def run_inspection(
                     print(f"[INFO] Text mask rebuilt: {text_mask.pixel_count} ink px, "
                           f"{len(text_mask.char_rects)} chars")
                 if position_lock is not None:
-                    position_lock._tpl = ref_template
-                    position_lock.reset()
+                    position_lock.set_template(ref_template)
                 print("[INFO] Reference updated.")
             else:
                 print("[INFO] Reference recapture cancelled.")
@@ -389,8 +388,13 @@ def main() -> None:
     # ---- Position lock ---------------------------------------------
     position_lock: PositionLock | None = None
     if POSITION_LOCK_ENABLED:
+        from config import POSITION_LOCK_ANGLE_RANGE, POSITION_LOCK_ANGLE_STEP
         position_lock = PositionLock(ref_template)
-        print(f"[INFO] Position lock ON — template {ref_template.shape[1]}×{ref_template.shape[0]} px")
+        n_angles = len(range(-POSITION_LOCK_ANGLE_RANGE,
+                              POSITION_LOCK_ANGLE_RANGE + 1,
+                              POSITION_LOCK_ANGLE_STEP))
+        print(f"[INFO] Position lock ON — template {ref_template.shape[1]}×{ref_template.shape[0]} px"
+              f"  angles ±{POSITION_LOCK_ANGLE_RANGE}° step {POSITION_LOCK_ANGLE_STEP}° ({n_angles} templates)")
     else:
         print("[INFO] Position lock OFF — fixed ROI mode")
 
