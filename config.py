@@ -50,15 +50,6 @@ EDGE_DIFF_THRESHOLD = 0.06
 # Raw pixel difference: absolute intensity difference per pixel (0–255)
 PIXEL_DIFF_THRESHOLD = 15    # Lowered from 30 — catches subtle debris and fine strings
 
-# ---- Hard pixel-change override -----------------------------
-# If this fraction of ROI pixels exceeds PIXEL_DIFF_THRESHOLD, the frame is
-# flagged as defective immediately — regardless of the composite SSIM score.
-# This catches thin strings, fine debris, and small text additions that
-# affect only a small area but are clearly real changes.
-# Set to 0.0 to disable and rely on composite score only.
-CHANGED_PIXEL_RATIO_THRESHOLD = 0.07    # 7 % — raised from 0.8 % because 1-px
-# letter-edge halos on a moving object routinely affect 5–7 % of ROI pixels.
-
 # ---- Defect scoring (weighted combination) ------------------
 SSIM_WEIGHT   = 0.50
 EDGE_WEIGHT   = 0.25
@@ -96,20 +87,29 @@ POSITION_LOCK_BLUR_THRESHOLD = 30.0   # Laplacian variance below this = skip fra
 # ---- Illumination correction ----------------------------------------
 # Measures median brightness of the background (non-text) region in both
 # reference and live, then applies an additive offset to the live frame
-# before any diff is computed.  This removes false positives caused by
-# global lighting drift without affecting the text comparison.
+# before any diff is computed.  Eliminates false positives from lighting drift.
 ILLUMINATION_CORRECT_ENABLED = True
 
-# ---- Debris detection -----------------------------------------------
-# After illumination correction, search the diff image for compact blobs
-# (foreign objects: dust, threads, caps).  Shape filters separate debris
-# from elongated alignment-noise artifacts.
-DEBRIS_DETECTION_ENABLED    = True
-DEBRIS_MIN_AREA             = 20     # px² — smaller blobs are sensor noise
-DEBRIS_MAX_AREA             = 3000   # px² — larger = structural defect, handled by SSIM
-DEBRIS_DIFF_THRESHOLD       = 22     # intensity diff to flag a pixel as changed
-DEBRIS_CIRCULARITY_MIN      = 0.20   # 4πA/P²; debris is compact (≥0.20), noise is not
-DEBRIS_MAX_ASPECT_RATIO     = 3.5    # max(w,h)/min(w,h); debris ≤3.5, elongated noise >3.5
+# ---- Addition detection (PRIMARY defect gate) -----------------------
+# Detects new dark marks added to the text region: drawn lines, smudges,
+# debris resting on characters.  Uses a DIRECTIONAL diff so only pixels
+# where live is darker than reference are counted — making the detector
+# completely insensitive to faded/missing ink, lighting changes, or
+# positional/rotational shifts after alignment.
+# This is the ONLY signal that sets is_defect = True.
+ADDITION_DETECTION_ENABLED = True
+ADDITION_THRESHOLD         = 20   # intensity units; live must be this much darker
+ADDITION_MIN_AREA          = 15   # px² — minimum blob to report (rejects single-px noise)
+
+# ---- Background debris detection (OFF by default) -------------------
+# Compact-blob search in the non-text region.  Not needed for the primary
+# use case (debris on text); enable only if background contamination matters.
+DEBRIS_DETECTION_ENABLED    = False
+DEBRIS_MIN_AREA             = 20
+DEBRIS_MAX_AREA             = 3000
+DEBRIS_DIFF_THRESHOLD       = 22
+DEBRIS_CIRCULARITY_MIN      = 0.20
+DEBRIS_MAX_ASPECT_RATIO     = 3.5
 
 # ---- Feature-based alignment (rotation-invariant) -------------------
 # Replaces phase-correlation aligner for crops with rotational variance.
