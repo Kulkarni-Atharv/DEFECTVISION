@@ -93,6 +93,24 @@ POSITION_LOCK_THRESHOLD      = 0.72   # min normalised match confidence (0–1)
 POSITION_LOCK_SEARCH_MARGIN  = 80     # px around last position for fast search
 POSITION_LOCK_BLUR_THRESHOLD = 30.0   # Laplacian variance below this = skip frame; 0 = disabled
 
+# ---- Illumination correction ----------------------------------------
+# Measures median brightness of the background (non-text) region in both
+# reference and live, then applies an additive offset to the live frame
+# before any diff is computed.  This removes false positives caused by
+# global lighting drift without affecting the text comparison.
+ILLUMINATION_CORRECT_ENABLED = True
+
+# ---- Debris detection -----------------------------------------------
+# After illumination correction, search the diff image for compact blobs
+# (foreign objects: dust, threads, caps).  Shape filters separate debris
+# from elongated alignment-noise artifacts.
+DEBRIS_DETECTION_ENABLED    = True
+DEBRIS_MIN_AREA             = 10     # px² — smaller = noise, skip
+DEBRIS_MAX_AREA             = 3000   # px² — larger = structural defect, handled by SSIM
+DEBRIS_DIFF_THRESHOLD       = 18     # intensity diff to flag a pixel as changed
+DEBRIS_CIRCULARITY_MIN      = 0.15   # 4πA/P²; debris is compact (≥0.15), noise is not
+DEBRIS_MAX_ASPECT_RATIO     = 4.0    # max(w,h)/min(w,h); debris ≤4, elongated noise >4
+
 # ---- Feature-based alignment (rotation-invariant) -------------------
 # Replaces phase-correlation aligner for crops with rotational variance.
 # Falls back to phase-correlation if ORB finds too few keypoints.

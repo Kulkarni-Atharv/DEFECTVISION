@@ -12,6 +12,7 @@ from config import (
 _GREEN  = (30,  200,  30)
 _RED    = (20,   20, 220)
 _YELLOW = (0,   210, 255)
+_ORANGE = (0,   140, 255)   # debris highlight
 _WHITE  = (255, 255, 255)
 _GRAY   = (160, 160, 160)
 
@@ -132,6 +133,12 @@ class Visualizer:
             sx2, sy2 = int((cx + cw2) * scale_x), int((cy + ch2) * scale_y)
             color = _RED if cr.is_defect else _GREEN
             cv2.rectangle(live_annotated, (sx1, sy1), (sx2, sy2), color, 1)
+        for bx, by, bw, bh in result.debris_bboxes:
+            sx1, sy1 = int(bx * scale_x), int(by * scale_y)
+            sx2, sy2 = int((bx + bw) * scale_x), int((by + bh) * scale_y)
+            cv2.rectangle(live_annotated, (sx1, sy1), (sx2, sy2), _ORANGE, 2)
+            cv2.putText(live_annotated, "DBR", (sx1, max(sy1 - 2, 8)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.35, _ORANGE, 1, cv2.LINE_AA)
         self._cell_label(live_annotated, "LIVE")
         cell_live = live_annotated
 
@@ -156,26 +163,34 @@ class Visualizer:
         bar_h = 44
         bar = np.zeros((bar_h, panel.shape[1], 3), dtype=np.uint8)
 
+        debris_tag = f"  Debris: {result.debris_count}" if result.debris_count > 0 else ""
+        illum_tag  = f"  IllumOff: {result.illumination_offset:+d}" if result.illumination_offset else ""
+
         if warming_up:
-            bar_color = _YELLOW
+            bar_color   = _YELLOW
             status_text = f"WARMING UP  |  FPS: {fps:.1f}  Match: {match_conf:.2f}"
+        elif result.debris_count > 0 and confirmed_defect:
+            bar_color   = _ORANGE
+            status_text = (
+                f"DEBRIS DETECTED  |  Score: {smoothed_score:.3f}"
+                f"  SSIM: {result.ssim_score:.3f}{debris_tag}{illum_tag}"
+                f"  Match: {match_conf:.2f}  FPS: {fps:.1f}"
+            )
         elif confirmed_defect:
-            bar_color = _RED
+            bar_color   = _RED
             status_text = (
                 f"DEFECT  |  Score: {smoothed_score:.3f}"
                 f"  SSIM: {result.ssim_score:.3f}"
                 f"  EdgeDiff: {result.edge_diff_score:.3f}"
-                f"  Match: {match_conf:.2f}"
-                f"  FPS: {fps:.1f}"
+                f"{debris_tag}{illum_tag}  Match: {match_conf:.2f}  FPS: {fps:.1f}"
             )
         else:
-            bar_color = _GREEN
+            bar_color   = _GREEN
             status_text = (
                 f"PASS    |  Score: {smoothed_score:.3f}"
                 f"  SSIM: {result.ssim_score:.3f}"
                 f"  EdgeDiff: {result.edge_diff_score:.3f}"
-                f"  Match: {match_conf:.2f}"
-                f"  FPS: {fps:.1f}"
+                f"{illum_tag}  Match: {match_conf:.2f}  FPS: {fps:.1f}"
             )
 
         bar[:] = bar_color
