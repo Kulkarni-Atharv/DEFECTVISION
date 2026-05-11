@@ -268,21 +268,33 @@ class Inspector:
         text_mask,
     ) -> list:
         """
-        Find compact foreign-object blobs in the illumination-corrected diff.
+        Find compact foreign-object blobs in the background (non-text) region.
 
-        Works across both background AND text regions so debris resting ON
-        a character is also caught.
+        Searching only the background eliminates false positives from character
+        corner and edge pixels, which are compact but are text features, not
+        debris.  On-text defects (faded/missing characters, debris covering ink)
+        are handled by the char analysis and SSIM pipeline.
+
+        An extra dilation margin is applied to the text mask before inverting it
+        so that the noisy boundary zone around each character is also excluded.
 
         Shape filters
         -------------
         circularity  = 4π·area / perimeter²   (1 = perfect circle)
         aspect_ratio = max(w,h) / min(w,h)     (1 = square)
 
-        Debris is compact (high circularity OR low aspect ratio).
-        Alignment-noise artifacts are elongated — they fail both filters.
+        Debris is compact.  Elongated alignment-noise artifacts fail both filters.
         """
-        # Binary threshold on the diff
-        _, binary = cv2.threshold(diff, DEBRIS_DIFF_THRESHOLD, 255, cv2.THRESH_BINARY)
+        # Build the search region: background with a safety margin around text
+        if text_mask is not None and text_mask.is_ready():
+            exclusion   = cv2.dilate(text_mask.mask, _DEBRIS_KERNEL, iterations=3)
+            search_mask = cv2.bitwise_not(exclusion)
+            search_diff = cv2.bitwise_and(diff, diff, mask=search_mask)
+        else:
+            search_diff = diff
+
+        # Binary threshold on the background diff only
+        _, binary = cv2.threshold(search_diff, DEBRIS_DIFF_THRESHOLD, 255, cv2.THRESH_BINARY)
 
         # Remove single-pixel noise; fill small holes in blobs
         binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN,  _DEBRIS_KERNEL)

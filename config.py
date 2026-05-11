@@ -105,11 +105,11 @@ ILLUMINATION_CORRECT_ENABLED = True
 # (foreign objects: dust, threads, caps).  Shape filters separate debris
 # from elongated alignment-noise artifacts.
 DEBRIS_DETECTION_ENABLED    = True
-DEBRIS_MIN_AREA             = 10     # px² — smaller = noise, skip
+DEBRIS_MIN_AREA             = 20     # px² — smaller blobs are sensor noise
 DEBRIS_MAX_AREA             = 3000   # px² — larger = structural defect, handled by SSIM
-DEBRIS_DIFF_THRESHOLD       = 18     # intensity diff to flag a pixel as changed
-DEBRIS_CIRCULARITY_MIN      = 0.15   # 4πA/P²; debris is compact (≥0.15), noise is not
-DEBRIS_MAX_ASPECT_RATIO     = 4.0    # max(w,h)/min(w,h); debris ≤4, elongated noise >4
+DEBRIS_DIFF_THRESHOLD       = 22     # intensity diff to flag a pixel as changed
+DEBRIS_CIRCULARITY_MIN      = 0.20   # 4πA/P²; debris is compact (≥0.20), noise is not
+DEBRIS_MAX_ASPECT_RATIO     = 3.5    # max(w,h)/min(w,h); debris ≤3.5, elongated noise >3.5
 
 # ---- Feature-based alignment (rotation-invariant) -------------------
 # Replaces phase-correlation aligner for crops with rotational variance.
