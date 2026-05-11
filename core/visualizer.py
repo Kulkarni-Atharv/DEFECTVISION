@@ -175,10 +175,12 @@ class Visualizer:
             status_text = f"WARMING UP  |  FPS: {fps:.1f}  Match: {match_conf:.2f}"
         elif confirmed_defect:
             bar_color   = _ORANGE
+            addition_tag = f"  Blobs:{result.addition_count}" if result.addition_count else ""
             status_text = (
-                f"ADDITION DETECTED  |  Blobs: {result.addition_count}"
-                f"  Score: {smoothed_score:.3f}  SSIM: {result.ssim_score:.3f}"
-                f"{illum_tag}  Match: {match_conf:.2f}  FPS: {fps:.1f}"
+                f"DEFECT DETECTED  |  Score:{smoothed_score:.3f}"
+                f"  SSIM:{result.ssim_score:.3f}"
+                f"  Edge:{result.edge_diff_score:.3f}"
+                f"{addition_tag}{illum_tag}  Match:{match_conf:.2f}  FPS:{fps:.1f}"
             )
         else:
             bar_color   = _GREEN

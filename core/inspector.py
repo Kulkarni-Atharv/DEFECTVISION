@@ -102,7 +102,7 @@ class Inspector:
         self._ref_edges: np.ndarray | None = None
 
     def set_reference(self, ref_gray: np.ndarray) -> None:
-        self._ref_edges = self._edges(ref_gray)
+        self._ref_edges = self._edges(Inspector._local_norm(ref_gray))
 
     # ------------------------------------------------------------------
     def inspect(
@@ -122,7 +122,7 @@ class Inspector:
                 reference, live, text_mask
             )
 
-        # ---- 1. SSIM (informational) ---------------------------------
+        # ---- 1. SSIM ------------------------------------------------
         win = min(SSIM_WIN_SIZE, reference.shape[0], reference.shape[1])
         win = win if win % 2 == 1 else win - 1
         win = max(win, 3)
@@ -135,8 +135,12 @@ class Inspector:
         result.ssim_score = float(ssim_score)
         result.ssim_map   = ssim_map
 
-        # ---- 2. Pixel diff (informational) ---------------------------
-        diff = cv2.absdiff(reference, live)
+        # ---- 2. Pixel diff ------------------------------------------
+        # Use locally-normalised images so that slow illumination gradients
+        # (lamp angle, roller curvature) do not inflate the pixel-diff score.
+        ref_ln = Inspector._local_norm(reference)
+        liv_ln = Inspector._local_norm(live)
+        diff = cv2.absdiff(ref_ln, liv_ln)
         result.diff_map = diff
 
         if text_mask is not None and text_mask.is_ready():
@@ -150,10 +154,10 @@ class Inspector:
                 np.count_nonzero(diff > PIXEL_DIFF_THRESHOLD) / float(diff.size)
             )
 
-        # ---- 3. Edge diff (informational) ----------------------------
-        live_edges = self._edges(live)
+        # ---- 3. Edge diff -------------------------------------------
+        live_edges = self._edges(liv_ln)
         if self._ref_edges is None:
-            self._ref_edges = self._edges(reference)
+            self._ref_edges = self._edges(ref_ln)
         edge_diff = cv2.bitwise_xor(self._ref_edges, live_edges)
         result.edge_diff_map = edge_diff
 
@@ -167,7 +171,12 @@ class Inspector:
                 np.count_nonzero(edge_diff) / float(edge_diff.size)
             )
 
-        # ---- 4. Composite score (informational) ----------------------
+        # ---- 4. Composite score — PRIMARY DEFECT GATE ---------------
+        # Weighted combination of SSIM, Edge Diff, and Pixel Diff.
+        # This is the main decision: if the combined score exceeds
+        # DEFECT_SCORE_THRESHOLD the frame is flagged as defective.
+        # All three inputs are computed on locally-normalised images
+        # (see steps 1–3) so lighting gradients do not inflate the score.
         ssim_component  = float(np.clip(1.0 - ssim_score, 0.0, 1.0))
         edge_component  = float(np.clip(result.edge_diff_score  * EDGE_SCORE_SCALE,  0.0, 1.0))
         pixel_component = float(np.clip(result.pixel_diff_score * PIXEL_SCORE_SCALE, 0.0, 1.0))
@@ -177,10 +186,12 @@ class Inspector:
             PIXEL_WEIGHT * pixel_component,
             0.0, 1.0,
         ))
+        result.is_defect = (result.defect_score >= DEFECT_SCORE_THRESHOLD)
 
-        # ---- 5. PRIMARY GATE: addition detection --------------------
-        # Detects new dark marks added to the text region.
-        # This is the only thing that sets is_defect = True.
+        # ---- 5. Addition detection — supplementary gate -------------
+        # Catches new dark marks (debris, drawn lines) that may not move
+        # the composite score enough on their own.  Sets is_defect even
+        # if the composite score is below the threshold.
         if ADDITION_DETECTION_ENABLED:
             additions = self._detect_additions(reference, live, text_mask)
             result.addition_contours = additions
