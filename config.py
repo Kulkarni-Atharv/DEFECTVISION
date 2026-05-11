@@ -82,9 +82,18 @@ CORNER_ACCENT_LENGTH = 18    # Length of corner bracket lines on main feed
 # Replaces the fixed-ROI crop with template matching so the print region
 # is found dynamically each frame, regardless of conveyor position.
 POSITION_LOCK_ENABLED        = True
-POSITION_LOCK_THRESHOLD      = 0.72   # min normalised match confidence (0–1)
+POSITION_LOCK_THRESHOLD      = 0.55   # Lowered from 0.72: template matching loses score at
+                                       # different angles — TextNormalizer corrects rotation
+                                       # after the crop, so a looser threshold is safe here.
 POSITION_LOCK_SEARCH_MARGIN  = 80     # px around last position for fast search
 POSITION_LOCK_BLUR_THRESHOLD = 30.0   # Laplacian variance below this = skip frame; 0 = disabled
+
+# ---- Text rotation normalizer ---------------------------------------
+# Corrects in-plane rotation of the text crop so that reference and live
+# are always compared at the same orientation, regardless of the roller angle
+# at the moment of capture.  Uses PCA on ink pixels (~3 ms on Pi CM5).
+TEXT_NORM_ENABLED   = True
+TEXT_NORM_MIN_ANGLE = 1.5   # degrees; skip correction below this (no perceptible effect)
 
 # ---- Illumination correction ----------------------------------------
 # Measures median brightness of the background (non-text) region in both

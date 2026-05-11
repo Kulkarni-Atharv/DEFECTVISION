@@ -27,17 +27,18 @@ from config import (
     LOG_DIR,
     POSITION_LOCK_ENABLED,
 )
-from core.camera          import create_camera
-from core.roi_selector    import ROISelector
-from core.preprocessor    import Preprocessor
-from core.feature_aligner import FeatureAligner
-from core.text_mask       import TextMask
-from core.inspector       import Inspector
-from core.temporal_filter import TemporalFilter
-from core.visualizer      import Visualizer
-from core.position_lock   import PositionLock
-from utils.logger         import DefectLogger
-from config               import TEXT_MASK_ENABLED
+from core.camera           import create_camera
+from core.roi_selector     import ROISelector
+from core.preprocessor     import Preprocessor
+from core.feature_aligner  import FeatureAligner
+from core.text_mask        import TextMask
+from core.text_normalizer  import TextNormalizer
+from core.inspector        import Inspector
+from core.temporal_filter  import TemporalFilter
+from core.visualizer       import Visualizer
+from core.position_lock    import PositionLock
+from utils.logger          import DefectLogger
+from config                import TEXT_MASK_ENABLED, TEXT_NORM_ENABLED
 
 import os
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -148,6 +149,7 @@ def run_inspection(
     logger: DefectLogger,
     position_lock: PositionLock | None = None,
     text_mask: TextMask | None = None,
+    normalizer: TextNormalizer | None = None,
 ) -> None:
     inspector.set_reference(ref_gray)
     aligner.set_reference(ref_gray)
@@ -222,7 +224,11 @@ def run_inspection(
             roi_bgr   = _grab_roi(frame, current_roi)
             live_gray = preprocessor.process(roi_bgr)
 
-            # ---- Alignment: ORB homography corrects rotation + residual shift
+            # ---- Rotation normalisation: bring live to reference angle
+            if normalizer is not None:
+                live_gray = normalizer.normalize(live_gray)
+
+            # ---- Alignment: fine sub-pixel correction ----------------
             live_gray, _ = aligner.align(ref_gray, live_gray)
 
             # ---- Structural inspection (text-aware when mask available) --
@@ -278,6 +284,8 @@ def run_inspection(
                 inspector.set_reference(ref_gray)
                 aligner.set_reference(ref_gray)
                 temporal.reset()
+                if normalizer is not None:
+                    normalizer.set_reference(ref_gray)
                 if text_mask is not None:
                     text_mask.build(ref_gray)
                     print(f"[INFO] Text mask rebuilt: {text_mask.pixel_count} ink px, "
@@ -291,7 +299,7 @@ def run_inspection(
 
         elif key == ord('s'):
             snap_path = os.path.join(
-                LOG_DIR,
+                LOG_DIR, 
                 f"snapshot_{time.strftime('%Y%m%d_%H%M%S')}.png"
             )
             cv2.imwrite(snap_path, roi_bgr)
@@ -370,8 +378,13 @@ def main() -> None:
         text_mask.build(ref_gray)
         print(f"[INFO] Text mask: {text_mask.pixel_count} ink px, "
               f"{len(text_mask.char_rects)} character regions")
-    else:
-        print("[INFO] Text mask OFF — whole-ROI comparison mode")
+
+    # ---- Rotation normaliser ---------------------------------------
+    normalizer: TextNormalizer | None = None
+    if TEXT_NORM_ENABLED:
+        normalizer = TextNormalizer()
+        normalizer.set_reference(ref_gray)
+        print("[INFO] Text normaliser ON — angle-invariant inspection enabled")
 
     # ---- Position lock ---------------------------------------------
     position_lock: PositionLock | None = None
@@ -386,7 +399,7 @@ def main() -> None:
         run_inspection(
             cam, roi, ref_gray,
             preprocessor, aligner, inspector, temporal, visualizer, logger,
-            position_lock, text_mask,
+            position_lock, text_mask, normalizer,
         )
     finally:
         cam.release()
