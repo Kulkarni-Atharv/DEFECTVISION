@@ -14,7 +14,6 @@ _RED    = (20,   20, 220)
 _YELLOW = (0,   210, 255)
 _ORANGE = (0,   140, 255)   # debris highlight
 _WHITE  = (255, 255, 255)
-_GRAY   = (160, 160, 160)
 
 
 class Visualizer:
@@ -41,7 +40,7 @@ class Visualizer:
     ) -> np.ndarray:
         x, y, w, h = roi
         if searching:
-            color = _GRAY
+            color = _YELLOW
         elif warming_up:
             color = _YELLOW
         elif confirmed_defect:
