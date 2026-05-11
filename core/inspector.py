@@ -255,13 +255,23 @@ class Inspector:
             ks = ADDITION_BLUR_KSIZE if ADDITION_BLUR_KSIZE % 2 == 1 else ADDITION_BLUR_KSIZE + 1
             addition_map = cv2.GaussianBlur(addition_map, (ks, ks), 0)
 
-        # Restrict to text region + margin; background changes are ignored
+        # Restrict to text region + margin; background changes are ignored.
+        # Sample the background noise floor BEFORE masking so we can use it
+        # to set an adaptive threshold that absorbs residual illumination drift.
+        adaptive_thresh = ADDITION_THRESHOLD
         if text_mask is not None and text_mask.is_ready():
             search_zone = cv2.dilate(text_mask.mask, _DEBRIS_KERNEL, iterations=2)
+            bg_excl     = cv2.bitwise_not(search_zone)
+            bg_vals     = addition_map[bg_excl > 0]
+            if len(bg_vals) > 20:
+                # 90th-percentile of background "additions" = residual illumination level.
+                # Real marks in text are far stronger; we only need to lift the
+                # threshold above the noise floor without hiding genuine defects.
+                noise_floor = int(np.percentile(bg_vals, 90))
+                adaptive_thresh = max(ADDITION_THRESHOLD, noise_floor + 8)
             addition_map = cv2.bitwise_and(addition_map, addition_map, mask=search_zone)
 
-        # Threshold
-        _, binary = cv2.threshold(addition_map, ADDITION_THRESHOLD, 255, cv2.THRESH_BINARY)
+        _, binary = cv2.threshold(addition_map, adaptive_thresh, 255, cv2.THRESH_BINARY)
 
         # Remove residual 1-pixel-wide alignment artifacts
         binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, _OPEN_KERNEL)
@@ -276,23 +286,48 @@ class Inspector:
         live: np.ndarray,
         text_mask,
     ) -> tuple[np.ndarray, int]:
-        """Shift live brightness to match reference using background pixels."""
-        if text_mask is not None and text_mask.is_ready():
+        """
+        Affine illumination correction: scale × live + offset.
+
+        Most real lighting changes (lamp intensity, camera exposure) are
+        multiplicative — the scene scales proportionally.  A pure additive
+        shift cannot compensate for this, leaving a residual that triggers
+        false addition detections.  We first apply a scale factor (ratio of
+        background medians), then a small residual additive offset to remove
+        any remaining constant bias.
+        """
+        has_mask = text_mask is not None and text_mask.is_ready()
+        if has_mask:
             bg_mask   = cv2.bitwise_not(text_mask.mask)
             ref_vals  = reference[bg_mask > 0].astype(np.float32)
             live_vals = live[bg_mask > 0].astype(np.float32)
         else:
+            bg_mask   = None
             ref_vals  = reference.ravel().astype(np.float32)
             live_vals = live.ravel().astype(np.float32)
 
-        if len(ref_vals) == 0:
+        if len(ref_vals) < 10:
             return live, 0
 
-        offset = int(round(float(np.median(ref_vals)) - float(np.median(live_vals))))
-        if abs(offset) < 2:
+        ref_med  = float(np.median(ref_vals))
+        live_med = float(np.median(live_vals))
+
+        if live_med < 5.0:
             return live, 0
 
-        corrected = np.clip(live.astype(np.int32) + offset, 0, 255).astype(np.uint8)
+        # Multiplicative correction — handles lamp dimming/brightening, exposure change
+        scale = float(np.clip(ref_med / live_med, 0.5, 2.0))
+        corrected = np.clip(live.astype(np.float32) * scale, 0, 255).astype(np.uint8)
+
+        # Residual additive offset after scaling
+        if bg_mask is not None:
+            corr_med = float(np.median(corrected[bg_mask > 0]))
+        else:
+            corr_med = float(np.median(corrected))
+        offset = int(round(ref_med - corr_med))
+        if abs(offset) >= 2:
+            corrected = np.clip(corrected.astype(np.int32) + offset, 0, 255).astype(np.uint8)
+
         return corrected, offset
 
     # ------------------------------------------------------------------
