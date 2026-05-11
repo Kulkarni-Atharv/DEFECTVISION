@@ -127,7 +127,7 @@ class ROISelector:
         def confirm(e=None):
             if roi_out[0]:
                 live[0] = False
-                root.quit()
+                root.destroy()   # destroy from inside the event loop — safe
 
         def reset(e=None):
             roi_out[0] = None
@@ -140,7 +140,7 @@ class ROISelector:
         def cancel(e=None):
             live[0] = False
             roi_out[0] = None
-            root.quit()
+            root.destroy()   # destroy from inside the event loop — safe
 
         canvas.bind("<ButtonPress-1>",   on_press)
         canvas.bind("<B1-Motion>",        on_drag)
@@ -155,10 +155,9 @@ class ROISelector:
 
         update_frame()
         root.mainloop()
-        try:
-            root.destroy()
-        except Exception:
-            pass
+        # No destroy() here — already called from inside the callback above.
+        # Calling destroy() outside the mainloop is what caused:
+        # "Tcl_AsyncDelete: async handler deleted by the wrong thread"
 
         if roi_out[0]:
             x, y, w, h = roi_out[0]
