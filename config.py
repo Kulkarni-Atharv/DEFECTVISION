@@ -82,9 +82,9 @@ CORNER_ACCENT_LENGTH = 18    # Length of corner bracket lines on main feed
 # Replaces the fixed-ROI crop with template matching so the print region
 # is found dynamically each frame, regardless of conveyor position.
 POSITION_LOCK_ENABLED        = True
-POSITION_LOCK_THRESHOLD      = 0.45   # NCC confidence; lowered because multi-angle search
-                                       # returns the best-rotation match, so even a looser
-                                       # threshold doesn't risk false matches.
+POSITION_LOCK_THRESHOLD      = 0.55   # NCC confidence for multi-angle best match.
+                                       # Multi-angle search scores the correct region higher
+                                       # than a wrong region, so 0.55 is safe here.
 POSITION_LOCK_SEARCH_MARGIN  = 80     # px around last position for fast search
 POSITION_LOCK_BLUR_THRESHOLD = 30.0   # Laplacian variance below this = skip frame; 0 = disabled
 
@@ -95,6 +95,17 @@ POSITION_LOCK_BLUR_THRESHOLD = 30.0   # Laplacian variance below this = skip fra
 POSITION_LOCK_ANGLE_RANGE    = 90     # degrees each side (±90 = full half-turn coverage)
 POSITION_LOCK_ANGLE_STEP     = 10     # degrees between pre-rotated templates
                                        # 10° step = 19 templates, ~5–8 ms on CM5
+
+# ---- Content verification gate -------------------------------------
+# After PositionLock finds a crop and the full inspection runs, if SSIM
+# is below this floor AND no additions are detected, the matched region
+# is almost certainly the WRONG part of the roller (different text) —
+# not the reference region.  The frame is discarded (SEARCHING state)
+# so the temporal filter is never fed a wrong-region result.
+# Set to 0.0 to disable.  Typical values: 0.25–0.35.
+# Correct text (clean or with defect): SSIM ≈ 0.50–0.90
+# Completely different text:           SSIM ≈ 0.10–0.30
+CONTENT_VERIFY_MIN_SSIM      = 0.28
 
 # ---- Text rotation normalizer ---------------------------------------
 # Corrects in-plane rotation of the text crop so that reference and live

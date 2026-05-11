@@ -38,7 +38,7 @@ from core.temporal_filter  import TemporalFilter
 from core.visualizer       import Visualizer
 from core.position_lock    import PositionLock
 from utils.logger          import DefectLogger
-from config                import TEXT_MASK_ENABLED, TEXT_NORM_ENABLED
+from config                import TEXT_MASK_ENABLED, TEXT_NORM_ENABLED, CONTENT_VERIFY_MIN_SSIM
 
 import os
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -233,6 +233,31 @@ def run_inspection(
 
             # ---- Structural inspection (text-aware when mask available) --
             result = inspector.inspect(ref_gray, live_gray, text_mask)
+
+            # ---- Content verification: reject wrong-region matches ----
+            # If SSIM is below the floor AND no additions were detected,
+            # PositionLock grabbed the wrong part of the roller (different
+            # text entirely).  Discard the frame — show SEARCHING so the
+            # temporal filter is never fed a wrong-region result.
+            if (CONTENT_VERIFY_MIN_SSIM > 0.0
+                    and result.ssim_score < CONTENT_VERIFY_MIN_SSIM
+                    and not result.is_defect):
+                main_display = frame.copy()
+                main_display = visualizer.draw_main_overlay(
+                    main_display, current_roi,
+                    confirmed_defect=False, smoothed_score=0.0,
+                    warming_up=False, match_conf=match_conf, searching=True,
+                )
+                cv2.putText(main_display,
+                            f"FPS: {fps:.1f}  Frame: {frame_num}",
+                            (10, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (200, 200, 200), 1)
+                cv2.imshow(WIN_MAIN, main_display)
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('q'):
+                    break
+                elif key == ord(' '):
+                    paused = not paused
+                continue
 
             # ---- Temporal consistency --------------------------------
             warming_up = not temporal.window_full
