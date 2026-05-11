@@ -109,13 +109,20 @@ ILLUMINATION_CORRECT_ENABLED = True
 # positional/rotational shifts after alignment.
 # This is the ONLY signal that sets is_defect = True.
 ADDITION_DETECTION_ENABLED = True
-ADDITION_THRESHOLD         = 30   # intensity units; live must be this much darker.
-                                   # Camera noise is ±10–15; real marks darken by 80–160.
-                                   # Raise if flickering; lower if faint marks are missed.
+ADDITION_THRESHOLD         = 20   # intensity units in locally-normalised space.
+                                   # After local-mean subtraction camera noise is ±3–6;
+                                   # real marks produce 40–120 units.  Lower than before
+                                   # because the normalisation removes lighting drift so
+                                   # a tighter value catches faint marks without FP.
 ADDITION_MIN_AREA          = 25   # px² — minimum blob area.  A 2×13 px line = 26 px².
 ADDITION_BLUR_KSIZE        = 5    # Gaussian blur kernel before threshold (must be odd).
                                    # Averages out per-frame sensor noise spikes.
                                    # Set to 1 to disable blur.
+LOCAL_NORM_KSIZE           = 41   # Gaussian kernel for local-mean subtraction applied
+                                   # before the directional diff.  Removes slow illumination
+                                   # gradients (roller curvature, lamp angle) while keeping
+                                   # sharp local features intact.  Must be odd; increase for
+                                   # larger ROIs or broader gradient patterns.
 
 # ---- Background debris detection (OFF by default) -------------------
 # Compact-blob search in the non-text region.  Not needed for the primary

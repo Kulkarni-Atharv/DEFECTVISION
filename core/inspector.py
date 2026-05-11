@@ -23,6 +23,7 @@ from config import (
     ADDITION_THRESHOLD,
     ADDITION_MIN_AREA,
     ADDITION_BLUR_KSIZE,
+    LOCAL_NORM_KSIZE,
     CHAR_INK_CHANGE_THRESHOLD,
 )
 
@@ -235,17 +236,24 @@ class Inspector:
         A 2×2 MORPH_OPEN removes 1-pixel-wide alignment-edge artifacts before
         blob detection, so a 1-pixel character-boundary shift does not trigger.
         """
-        # Auto-detect ink polarity from reference median
+        # Local-mean subtraction: remove slow illumination gradients before diff.
+        # Each pixel becomes (pixel − local_neighbourhood_mean + 128), which
+        # cancels global brightness shifts, exposure changes, and curved-surface
+        # gradients while keeping sharp local features (ink, marks) intact.
+        # Polarity is still determined from the original reference median.
+        ref_ln  = Inspector._local_norm(reference)
+        live_ln = Inspector._local_norm(live)
+
         ref_median = float(np.median(reference))
         if ref_median >= 100:
-            # Light background, dark ink: added ink makes live darker
+            # Light background: added dark mark makes live locally darker
             addition_map = np.clip(
-                reference.astype(np.int32) - live.astype(np.int32), 0, 255
+                ref_ln.astype(np.int32) - live_ln.astype(np.int32), 0, 255
             ).astype(np.uint8)
         else:
-            # Dark background, light ink: added ink makes live brighter
+            # Dark background: added light mark makes live locally brighter
             addition_map = np.clip(
-                live.astype(np.int32) - reference.astype(np.int32), 0, 255
+                live_ln.astype(np.int32) - ref_ln.astype(np.int32), 0, 255
             ).astype(np.uint8)
 
         # Gaussian blur suppresses frame-to-frame sensor noise before thresholding.
@@ -385,6 +393,22 @@ class Inspector:
             is_def = score >= CHAR_INK_CHANGE_THRESHOLD
             results.append(CharResult(rect=rect, ink_change_ratio=score, is_defect=is_def))
         return results
+
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _local_norm(img: np.ndarray) -> np.ndarray:
+        """
+        Remove local illumination gradients while preserving sharp features.
+
+        Computes  out = clip(img − blur(img) + 128, 0, 255).
+        The subtraction cancels any brightness variation that is slower
+        than LOCAL_NORM_KSIZE pixels (lamp angle, roller curvature, exposure
+        drift).  Genuine dark marks are much more spatially localised, so
+        their contrast against the local background survives intact.
+        """
+        ks = LOCAL_NORM_KSIZE | 1   # ensure odd
+        blur = cv2.GaussianBlur(img.astype(np.float32), (ks, ks), 0)
+        return np.clip(img.astype(np.float32) - blur + 128.0, 0, 255).astype(np.uint8)
 
     # ------------------------------------------------------------------
     @staticmethod
